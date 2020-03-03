@@ -6,42 +6,6 @@
 -- by Lucas Pinard
 -- for POSTGRESQL
 
-DECLARE i INTEGER;
-BEGIN
-	SELECT 1 INTO i
-	FROM pg_roles
-	WHERE rolname='BIBLIOBRETTE_ADMIN';
-	
-	IF i <> 1 THEN
-		CREATE USER BIBLIOBRETTE_ADMIN
-		WITH LOGIN PASSWORD 'admin';
-	END IF;
-	
-	SELECT 1 INTO i
-	FROM pg_tablespace
-	WHERE spc_name='SPC_BIBLIOBRETTE';
-	
-	IF i <> 1 THEN
-		CREATE TABLESPACE SPC_BIBLIOBRETTE
-		OWNER BIBLIOBRETTE_ADMIN
-		LOCATION './data';
-	END IF;
-	
-	DROP DATABASE IF EXISTS BIBLIOBRETTE_DB
-	CREATE DATABASE BIBLIOBRETTE_DB
-	WITH
-		OWNER = BIBLIOBRETTE_ADMIN
-		TABLESPACE = SPC_BIBLIOBRETTE
-		ENCODING = UTF8
-	;
-	
-	GRANT ALL PRIVILEGES ON BIBLIOBRETTE_DB TO BIBLIOBRETTE_ADMIN;
-END;
-
-CONNECT TO BIBLIOBRETTE_DB USER BIBLIOBRETTE_ADMIN;
-
--- No need to drop all tables since we already dropped the database
-
 CREATE TABLE BIBLIOUSER (
 	id			SERIAL PRIMARY KEY,
 	username	VARCHAR(20) NOT NULL,
@@ -50,8 +14,10 @@ CREATE TABLE BIBLIOUSER (
 	isAdmin		BOOLEAN
 );
 
+CREATE SEQUENCE DOC_SERIAL;
+
 CREATE TABLE DOCUMENT (
-	id SERIAL PRIMARY KEY
+	id INTEGER PRIMARY KEY
 );
 
 CREATE TABLE BORROWLOG (
@@ -65,42 +31,59 @@ CREATE TABLE BORROWLOG (
 
 CREATE TABLE LITERARYGENRE (
 	id		SERIAL PRIMARY KEY,
-	name 	VARCHAR(20) NOT NULL UNIQUE,
+	name 	VARCHAR(20) NOT NULL UNIQUE
 );
 
 CREATE TABLE CINEMATICGENRE (
 	id		SERIAL PRIMARY KEY,
-	name 	VARCHAR(20) NOT NULL UNIQUE,
+	name 	VARCHAR(20) NOT NULL UNIQUE
 );
 
 CREATE TABLE MUSICALGENRE (
 	id		SERIAL PRIMARY KEY,
-	name	VARCHAR(20) NOT NULL UNIQUE,
+	name	VARCHAR(20) NOT NULL UNIQUE
 );
 
 CREATE TABLE BOOK (
-	id				INTEGER PRIMARY KEY REFERENCES DOCUMENT (id),
-	name 			VARCHAR(20),
+	id				INTEGER PRIMARY KEY REFERENCES DOCUMENT (id) DEFAULT nextval('DOC_SERIAL'),
+	name 			VARCHAR(50),
 	author			VARCHAR(50),
 	publicationYear	VARCHAR(4),
 	genre			INTEGER REFERENCES LITERARYGENRE (id)
 );
 
 CREATE TABLE DVD (
-	id				INTEGER PRIMARY KEY REFERENCES DOCUMENT (id),
-	name 			VARCHAR(20),
+	id				INTEGER PRIMARY KEY REFERENCES DOCUMENT (id) DEFAULT nextval('DOC_SERIAL'),
+	name 			VARCHAR(50),
 	realisator		VARCHAR(50),
 	releaseYear		VARCHAR(4),
 	genre			INTEGER REFERENCES CINEMATICGENRE (id)
 );
 
 CREATE TABLE CD (
-	id				INTEGER PRIMARY KEY REFERENCES DOCUMENT (id),
-	name 			VARCHAR(20),
+	id				INTEGER PRIMARY KEY REFERENCES DOCUMENT (id) DEFAULT nextval('DOC_SERIAL'),
+	name 			VARCHAR(50),
 	releasedBy		VARCHAR(50),
 	releaseYear		VARCHAR(4),
 	genre			INTEGER REFERENCES MUSICALGENRE (id)
 );
+
+CREATE OR REPLACE FUNCTION TGPROC_DOC() RETURNS trigger AS $tgproc$
+BEGIN
+	INSERT INTO DOCUMENT
+	VALUES (NEW.id);
+	RETURN NEW;
+END;
+$tgproc$ LANGUAGE plpgsql;
+
+CREATE TRIGGER TG_DOC BEFORE INSERT ON BOOK
+FOR EACH ROW EXECUTE PROCEDURE TGPROC_DOC();
+
+CREATE TRIGGER TG_DOC BEFORE INSERT ON DVD
+FOR EACH ROW EXECUTE PROCEDURE TGPROC_DOC();
+
+CREATE TRIGGER TG_DOC BEFORE INSERT ON CD
+FOR EACH ROW EXECUTE PROCEDURE TGPROC_DOC();
 
 INSERT INTO BIBLIOUSER (username, password, email, isAdmin)
 VALUES -- Passwords are hashed using SHA256 hashing algorithm
@@ -119,7 +102,7 @@ INSERT INTO CINEMATICGENRE (name) VALUES
 	('Drame'),
 	('Action'),
 	('Documentaire'),
-	('Horreur'),
+	('Horreur');
 
 INSERT INTO MUSICALGENRE (name) VALUES
 	('Rock');
@@ -134,10 +117,10 @@ WITH val (n, c, y, g) AS (
 		('Les mots', 'Jean-Paul Sartre', '1964', 'Biographie'),
 		('Les mots', 'Jean-Paul Sartre', '1964', 'Biographie'),
 		('Les mots', 'Jean-Paul Sartre', '1964', 'Biographie'),
-		('Le Journal d\'Anne Frank', 'Anne Frank', '1947', 'Biographie'),
-		('Le Journal d\'Anne Frank', 'Anne Frank', '1947', 'Biographie'),
-		('Le Journal d\'Anne Frank', 'Anne Frank', '1947', 'Biographie'),
-		('Le Journal d\'Anne Frank', 'Anne Frank', '1947', 'Biographie'),
+		('Le Journal d''Anne Frank', 'Anne Frank', '1947', 'Biographie'),
+		('Le Journal d''Anne Frank', 'Anne Frank', '1947', 'Biographie'),
+		('Le Journal d''Anne Frank', 'Anne Frank', '1947', 'Biographie'),
+		('Le Journal d''Anne Frank', 'Anne Frank', '1947', 'Biographie'),
 		('Un long chemin vers la liberté', 'Jean Guiloineau', '1996', 'Biographie'),
 		('Un long chemin vers la liberté', 'Jean Guiloineau', '1996', 'Biographie'),
 		
@@ -198,9 +181,9 @@ WITH val (n, c, y, g) AS (
 		('Les Fleurs du Mal', 'Charles Beaudelaire', '1857', 'Poésie'),
 		('Les Fleurs du Mal', 'Charles Beaudelaire', '1857', 'Poésie'),
 		('Les Fleurs du Mal', 'Charles Beaudelaire', '1857', 'Poésie'),
-		('Les yeux d\'Elsa', 'Louis Aragon', '1942', 'Poésie'),
-		('Les yeux d\'Elsa', 'Louis Aragon', '1942', 'Poésie'),
-		('Les yeux d\'Elsa', 'Louis Aragon', '1942', 'Poésie');
+		('Les yeux d''Elsa', 'Louis Aragon', '1942', 'Poésie'),
+		('Les yeux d''Elsa', 'Louis Aragon', '1942', 'Poésie'),
+		('Les yeux d''Elsa', 'Louis Aragon', '1942', 'Poésie')
 )
 INSERT INTO BOOK (name, author, publicationYear, genre)
 SELECT val.n, val.c, val.y, LITERARYGENRE.id
@@ -268,7 +251,7 @@ WITH val (n, c, y, g) AS (
 		('Scream', 'Wes Craven', '1997', 'Horreur'),
 		('Scream', 'Wes Craven', '1997', 'Horreur'),
 		('Scream', 'Wes Craven', '1997', 'Horreur'),
-		('Scream', 'Wes Craven', '1997', 'Horreur');
+		('Scream', 'Wes Craven', '1997', 'Horreur')
 )
 INSERT INTO DVD (name, realisator, releaseYear, genre)
 SELECT val.n, val.c, val.y, CINEMATICGENRE.id
@@ -278,7 +261,7 @@ ON val.g = CINEMATICGENRE.name;
 WITH val (n, c, y, g) AS (
 	VALUES
 		('Sheer Heart Attack', 'Queen', '1974', 'Rock'),
-		('Back in Black', 'ACDC', '1980', 'Rock'),
+		('Back in Black', 'ACDC', '1980', 'Rock')
 )
 INSERT INTO CD (name, releasedBy, releaseYear, genre)
 SELECT val.n, val.c, val.y, MUSICALGENRE.id
