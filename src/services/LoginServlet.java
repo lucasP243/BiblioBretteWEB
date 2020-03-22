@@ -25,21 +25,18 @@ public class LoginServlet extends HttpServlet {
 
 	protected void doPost(final HttpServletRequest request, final HttpServletResponse response) throws ServletException, IOException {
 		HttpSession session = request.getSession();
-		String login = request.getParameter("login");
+		String email = request.getParameter("email");
 		String mdp = request.getParameter("mdp");
 
-		Utilisateur user = Mediatheque.getInstance().getUser(login, mdp);
-		if (user == null)
-			response.getWriter().println("<span style=\"color:red;\">Erreur d'identification</span>");
-
-		else {
+		Utilisateur user = Mediatheque.getInstance().getUser(email, mdp);
+		if (user == null) {
+			request.setAttribute("autherror", true);
+			this.getServletContext()
+			.getRequestDispatcher("/WEB-INF/login.jsp")
+			.forward(request, response);
+		} else {
 			session.setAttribute("utilisateur", user);
-			if (user.isBibliothecaire()) {
-				response.sendRedirect("www.google.com");
-			}
-			else {
-				response.sendRedirect("www.google.com");
-			}
+			response.sendRedirect("documents");
 		}
 
 

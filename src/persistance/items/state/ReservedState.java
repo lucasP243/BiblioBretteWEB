@@ -44,8 +44,7 @@ public class ReservedState implements DocumentState {
 	@Override
 	public DocumentState emprunter(Document d, Utilisateur u)
 			throws EmpruntException {
-		if (reservedBy.equals(u)) {
-			MediathequeData.getInstance().emprunter(d, u);
+		if (reservedBy.equals(u) && MediathequeData.getInstance().emprunter(d, u)) {
 			return new BorrowedState(u);
 		}
 		
@@ -57,7 +56,7 @@ public class ReservedState implements DocumentState {
 			throws RetourException {
 		if (reservedBy.equals(u)) {
 			expiration.cancel();
-			return new BorrowedState(u);
+			return new AvailableState();
 		}
 		
 		throw new RetourException();

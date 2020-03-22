@@ -28,17 +28,17 @@ public abstract class PersistentDocument implements Document {
 	}
 
 	@Override
-	public synchronized void rendre(Utilisateur u) 
-			throws RetourException {
-		currentState = currentState.rendre(this, u);
-	}
-
-	@Override
 	public synchronized void reserver(Utilisateur u) 
 			throws ReservationException {
 		currentState = currentState.reserver(this, u);
 	}
 	
+	@Override
+	public synchronized void rendre(Utilisateur u) 
+			throws RetourException {
+		currentState = currentState.rendre(this, u);
+	}
+
 	protected String getStatus() {
 		return currentState.toString();
 	}

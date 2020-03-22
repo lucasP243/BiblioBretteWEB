@@ -8,7 +8,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
+import java.util.Collections;
 import java.util.Hashtable;
 import java.util.LinkedList;
 import java.util.List;
@@ -23,21 +23,21 @@ import persistance.items.PersistentUtilisateur;
 
 public class MediathequeData implements PersistentMediatheque {
 
-	private static final String[] GET_ALL_DOCS = new String[] {
-			"SELECT BOOK.id, BOOK.name, BOOK.author, BOOK.publicationYear, G.name AS \"genre\" "
-					+ "FROM BOOK INNER JOIN LITERARYGENRE G ON BOOK.genre = G.id;",
+	private static final PreparedStatement[] GET_ALL_DOCS;
 
-					"SELECT DVD.id, DVD.name, DVD.realisator, DVD.releaseYear, G.name AS \"genre\" "
-							+ "FROM DVD INNER JOIN CINEMATICGENRE G ON DVD.genre = G.id;",
+	private static final PreparedStatement GET_USER_BYID;
 
-							"SELECT CD.id, CD.name, CD.releasedBy, CD.releaseYear, G.name AS \"genre\" "
-									+ "FROM CD INNER JOIN MUSICALGENRE G ON CD.genre = G.id;" };
+	private static final PreparedStatement GET_USER_BYLOGIN;
 
-	private static final String GET_USER_ID = 
-			"SELECT * FROM BIBLIOUSER WHERE id = ?";
+	private static final PreparedStatement[] GET_CAT_ID_BYNAME;
 
-	private static final String GET_USER_LOGIN = 
-			"SELECT * FROM BIBLIOUSER WHERE email = ? AND password = ?";
+	private static final PreparedStatement[] WRITE_DOC;
+
+	private static final PreparedStatement[] WRITE_CAT;
+
+	private static final PreparedStatement WRITE_BORROW;
+
+	private static final PreparedStatement WRITE_RETURN;
 
 	private static MessageDigest hash;
 
@@ -76,6 +76,39 @@ public class MediathequeData implements PersistentMediatheque {
 		}
 
 		Mediatheque.getInstance().setData(instance = new MediathequeData(c));
+
+		// Initialisation des PreparedStatements
+		try {
+			GET_ALL_DOCS = new PreparedStatement[] {
+					instance.db.prepareStatement("SELECT BOOK.id, BOOK.name, BOOK.author, BOOK.publicationyear, G.name, U.id FROM BOOK INNER JOIN LITERARYGENRE G ON BOOK.genre = G.id LEFT JOIN BORROWLOG B ON BOOK.id = B.docid AND B.returnedon IS NULL LEFT JOIN BIBLIOUSER U ON B.userid = U.id"), 
+					instance.db.prepareStatement("SELECT DVD.id, DVD.name, DVD.realisator, DVD.releaseyear, G.name, U.id FROM DVD INNER JOIN LITERARYGENRE G ON DVD.genre = G.id LEFT JOIN BORROWLOG B ON DVD.id = B.docid AND B.returnedon IS NULL LEFT JOIN BIBLIOUSER U ON B.userid = U.id"), 
+					instance.db.prepareStatement("SELECT CD.id, CD.name, CD.releasedby, CD.releaseyear, G.name, U.id FROM CD INNER JOIN LITERARYGENRE G ON CD.genre = G.id LEFT JOIN BORROWLOG B ON CD.id = B.docid AND B.returnedon IS NULL LEFT JOIN BIBLIOUSER U ON B.userid = U.id") 
+			};
+			GET_USER_BYID = instance.db.prepareStatement("SELECT * FROM BIBLIOUSER WHERE id = ?");
+			GET_USER_BYLOGIN = instance.db.prepareStatement("SELECT * FROM BIBLIOUSER WHERE email = ? AND password = ?");
+			GET_CAT_ID_BYNAME = new PreparedStatement[] {
+					instance.db.prepareStatement("SELECT id FROM LITERARYGENRE WHERE name = ?"),
+					instance.db.prepareStatement("SELECT id FROM CINEMATICGENRE WHERE name = ?"),
+					instance.db.prepareStatement("SELECT id FROM MUSICALGENRE WHERE name = ?")
+			};
+			WRITE_DOC = new PreparedStatement[] {
+					instance.db.prepareStatement("INSERT INTO BOOK (name, author, publicationyear, genre) VALUES (?, ?, ?, ?) RETURNING id"),
+					instance.db.prepareStatement("INSERT INTO DVD (name, realisator, releaseyear, genre) VALUES (?, ?, ?, ?) RETURNING id"),
+					instance.db.prepareStatement("INSERT INTO CD (name, releasedby, releaseyear, genre) VALUES (?, ?, ?, ?) RETURNING id"),
+			};
+			WRITE_CAT = new PreparedStatement[] {
+					instance.db.prepareStatement("INSERT INTO LITERARYGENRE (name) VALUES (?) RETURNING id"),
+					instance.db.prepareStatement("INSERT INTO CINEMATICGENRE (name) VALUES (?) RETURNING id"),
+					instance.db.prepareStatement("INSERT INTO MUSICALGENRE (name) VALUES (?) RETURNING id"),
+			};
+			WRITE_BORROW = instance.db.prepareStatement("INSERT INTO BORROWLOG (userid, docid, borrowedOn) VALUES (?, ?, ?)");
+			WRITE_RETURN = instance.db.prepareStatement("UPDATE BORROWLOG SET returnedon = ? WHERE docid = ? AND userid = ? AND returnedon IS NULL");
+		} catch (SQLException e) {
+			throw new RuntimeException("Failed to init SQL statements", e);
+		}
+		
+		// Une fois les requête précompilées on charge les documents
+		instance.chargerDocuments();
 	}
 
 	public static MediathequeData getInstance() {
@@ -90,34 +123,42 @@ public class MediathequeData implements PersistentMediatheque {
 		this.users = new Hashtable<>();
 	}
 
-	@Override
-	public List<Document> tousLesDocuments() {
-		List<Document> allDocs = new LinkedList<>();
+	private void chargerDocuments() {
 		try {
-			Statement query = db.createStatement();
 			for (int i = 0; i < GET_ALL_DOCS.length; i++) {
-				query.execute(GET_ALL_DOCS[i]);
-				ResultSet res = query.getResultSet();
+				GET_ALL_DOCS[i].execute();
+				ResultSet res = GET_ALL_DOCS[i].getResultSet();
 				while (res.next()) {
-					allDocs.add(DocumentFactory.create(
-							i,
-							res.getInt(1),		// id
-							res.getString(2),	// name
-							res.getString(3),	// author || realisator
-							res.getString(4),	// year
-							res.getString(5)	// category
-							));
+					docs.put(res.getInt(1),
+							DocumentFactory.create(
+									i,
+									res.getInt(1),		// id
+									res.getString(2),	// name
+									res.getString(3),	// author || realisator
+									res.getString(4),	// year
+									res.getString(5),	// category
+									res.getInt(6) 		// borrower
+									));
 				}
 			}
 		} catch (SQLException e) {
 			System.err.println("Failed to execute query : " + e.getMessage());
-		} finally {
-			for (Document d : allDocs) {
-				docs.put((Integer) d.data()[0], d);
-			}
 		}
-		return allDocs;
+	}
 
+	@Override
+	public List<Document> tousLesDocuments() {
+		List<Document> allDocs = new LinkedList<>();
+		for (Map.Entry<Integer, Document> e : docs.entrySet()) {
+			allDocs.add(e.getValue());
+		}
+		Collections.reverse(allDocs);
+		return allDocs;
+	}
+
+	@Override
+	public Document getDocument(int numDocument) {
+		return docs.get(numDocument);
 	}
 
 	public Utilisateur getUser(int id) {
@@ -127,19 +168,19 @@ public class MediathequeData implements PersistentMediatheque {
 		}
 
 		try {
-			PreparedStatement s = db.prepareStatement(GET_USER_ID);
-			s.setInt(1, id);
-			s.execute();
-			ResultSet res = s.getResultSet();
-			res.next();
-			u = new PersistentUtilisateur(
-					res.getInt(1),
-					res.getString(2),
-					res.getString(4),
-					res.getBoolean(5)
-					);
-			users.put(id, u);
-			return u;
+			GET_USER_BYID.setInt(1, id);
+			GET_USER_BYID.execute();
+			ResultSet res = GET_USER_BYID.getResultSet();
+			if (res.next()) {
+				u = new PersistentUtilisateur(
+						res.getInt(1),
+						res.getString(2),
+						res.getString(4),
+						res.getBoolean(5)
+						);
+				users.put(id, u);
+				return u;
+			}
 		} catch (SQLException e) {
 			System.err.println("Failed to execute query : " + e.getMessage());
 		}
@@ -149,24 +190,25 @@ public class MediathequeData implements PersistentMediatheque {
 	@Override
 	public Utilisateur getUser(String login, String password) {
 		try {
-			PreparedStatement s = db.prepareStatement(GET_USER_LOGIN);
-			s.setString(1, login);
-			s.setString(2, digest(password));
-			s.execute();
-			ResultSet res = s.getResultSet();
-			res.next();
-			Utilisateur u = new PersistentUtilisateur(
-					res.getInt(1),
-					res.getString(2),
-					res.getString(4),
-					res.getBoolean(5)
-					);
-			users.put((Integer) u.data()[0], u);
-			return u;
+			GET_USER_BYLOGIN.setString(1, login);
+			GET_USER_BYLOGIN.setString(2, digest(password));
+			GET_USER_BYLOGIN.execute();
+			ResultSet res = GET_USER_BYLOGIN.getResultSet();
+			if (res.next()) {
+				Utilisateur u = new PersistentUtilisateur(
+						res.getInt(1),
+						res.getString(2),
+						res.getString(4),
+						res.getBoolean(5)
+						);
+				if (users.get(u.data()[0]) == null)
+					users.put((Integer) u.data()[0], u);
+				return users.get(u.data()[0]);
+			}
 		} catch (SQLException e) {
 			System.err.println("Failed to execute query : " + e.getMessage());
-			return null;
 		}
+		return null;
 	}
 
 	private static String digest(String password) {
@@ -178,88 +220,56 @@ public class MediathequeData implements PersistentMediatheque {
 	}
 
 	@Override
-	public Document getDocument(int numDocument) {
-		if (docs.get(numDocument) == null) {
-			tousLesDocuments();
-		}
-		return docs.get(numDocument);
-	}
-
-	@Override
 	public void nouveauDocument(int type, Object... args) {
-		Document d = DocumentFactory.create(type, args, null);
-		docs.put((Integer) args[0], d);
-		String[] doctypes = new String[] {
-				"BOOK (id, name, author, publicationYear, genre)", 
-				"DVD (id, name, realisator, releaseYear, genre)", 
-				"CD (id, name, releasedBy, releaseYear, genre)"
-		};
-		String[] cats = new String[] { 
-				"LITERARYGENRE", "CINEMATICGENRE", "MUSICALGENRE" 
-		};
 		Integer catid = null;
 		try {
-			PreparedStatement s = db.prepareStatement(
-					"SELECT id FROM "+cats[type]+" WHERE name = ?"
-					);
-			s.setString(1, (String) args[4]);
-			s.execute();
-			ResultSet res = s.getResultSet();
+			GET_CAT_ID_BYNAME[type].setString(1, (String) args[3]);
+			GET_CAT_ID_BYNAME[type].execute();
+			ResultSet res = GET_CAT_ID_BYNAME[type].getResultSet();
 			if (res.next()) {
 				catid = res.getInt("id");
 			}
 			else {
-				s = db.prepareStatement(
-						"INSERT INTO "+cats[type]+" (name) VALUES ?"
-						);
-				s.setString(1, (String) args[4]);
-				s.executeUpdate();
-				s = db.prepareStatement(
-						"SELECT id FROM "+cats[type]+" WHERE name = ?"
-						);
-				s.setString(1, (String) args[4]);
-				s.execute();
-				res = s.getResultSet();
+				WRITE_CAT[type].setString(1, (String) args[3]);
+				WRITE_CAT[type].execute();
+				res = WRITE_CAT[type].getResultSet();
 				res.next();
 				catid = res.getInt("id");
 			}
-			assert catid != null;
-			s = db.prepareStatement(
-					"INSERT INTO "+doctypes[type]+" VALUES (?, ?, ?, ?, ?)"
-					);
-			s.setInt(1, (int) args[0]);
-			s.setString(2, (String) args[1]);
-			s.setString(3, (String) args[2]);
-			s.setString(4, (String) args[3]);
-			s.setInt(5, catid);
-			s.executeUpdate();
+			WRITE_DOC[type].setString(1, (String) args[0]);
+			WRITE_DOC[type].setString(2, (String) args[1]);
+			WRITE_DOC[type].setString(3, (String) args[2]);
+			WRITE_DOC[type].setInt(4, catid);
+			WRITE_DOC[type].execute();
+			res = WRITE_DOC[type].getResultSet();
+			res.next();
+			int docid = res.getInt("id");
+			docs.put(docid, DocumentFactory.create(type, docid, args[0], args[1], args[2], args[3], 0));
+
 		} catch (SQLException e) {
 			System.err.println("Failed to execute query : " + e.getMessage());
 		}
 	}
 
-	public void emprunter(Document d, Utilisateur u) {
+	public boolean emprunter(Document d, Utilisateur u) {
 		try {
-			PreparedStatement s = db.prepareStatement(
-					"INSERT INTO BORROWLOG (userid, docid, borrowedOn) VALUES (?, ?, ?)");
-			s.setInt(1, (int) u.data()[0]);
-			s.setInt(2, (int) d.data()[0]);
-			s.setDate(3, new java.sql.Date(new java.util.Date().getTime()));
-			s.executeUpdate();
+			WRITE_BORROW.setInt(1, (int) u.data()[0]);
+			WRITE_BORROW.setInt(2, (int) d.data()[0]);
+			WRITE_BORROW.setDate(3, new java.sql.Date(new java.util.Date().getTime()));
+			WRITE_BORROW.executeUpdate();
+			return true;
 		} catch (SQLException e) {
 			System.err.println("Failed to execute query : " + e.getMessage());
+			return false;
 		}
 	}
 
 	public void retourner(Document d, Utilisateur u) {
 		try {
-			PreparedStatement s = db.prepareStatement(
-					"UPDATE BORROWLOG SET returnedon = ? WHERE docid = ? AND userid = ? AND returnedon = null"
-					);
-			s.setDate(1, new java.sql.Date(new java.util.Date().getTime()));
-			s.setInt(2, (int) d.data()[0]);
-			s.setInt(3, (int) u.data()[0]);
-			s.executeUpdate();
+			WRITE_RETURN.setDate(1, new java.sql.Date(new java.util.Date().getTime()));
+			WRITE_RETURN.setInt(2, (int) d.data()[0]);
+			WRITE_RETURN.setInt(3, (int) u.data()[0]);
+			WRITE_RETURN.executeUpdate();
 		} catch (SQLException e) {
 			System.err.println("Failed to execute query : " + e.getMessage());
 		}

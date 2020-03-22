@@ -13,7 +13,7 @@ import mediatek2020.Mediatheque;
 import mediatek2020.items.Utilisateur;
 
 
-@WebServlet({ "/documents" })
+@WebServlet("/documents")
 public class DocumentServlet extends HttpServlet {
 	/**
 	 * 
@@ -23,11 +23,11 @@ public class DocumentServlet extends HttpServlet {
 	public void doGet( HttpServletRequest request, HttpServletResponse response ) throws ServletException, IOException{
 		HttpSession session = request.getSession();
 		Utilisateur user = (Utilisateur) session.getAttribute("utilisateur");
-		System.out.println(user);
         if (user == null) {
-            response.sendRedirect("/PROJET_JAVAEE/login");
+            response.sendRedirect("login");
             return;
         }
+        request.setAttribute("user", user);
         request.setAttribute("liste_documents",  Mediatheque.getInstance().tousLesDocuments());
 		this.getServletContext().getRequestDispatcher( "/WEB-INF/documents.jsp" ).forward( request, response );
 	}

@@ -13,12 +13,11 @@ public class DocumentFactory {
 	private DocumentFactory() {}
 
 	public static PersistentDocument create(int type, Object ...args) {
-		DocumentState s;
-		if (args.length > 5) {
-			s = new BorrowedState(
-					MediathequeData.getInstance().getUser((Integer) args[5]));
-		}
-		else s = new AvailableState();
+		DocumentState s = (int) args[5]==0?
+				new AvailableState()
+				:new BorrowedState(
+						MediathequeData.getInstance().getUser((int) args[5])
+						);
 		switch (type) {
 		case 0:
 			return new Book(
