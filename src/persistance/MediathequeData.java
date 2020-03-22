@@ -213,7 +213,7 @@ public class MediathequeData implements PersistentMediatheque {
 						"INSERT INTO "+cats[type]+" (name) VALUES ?"
 						);
 				s.setString(1, (String) args[4]);
-				s.execute();
+				s.executeUpdate();
 				s = db.prepareStatement(
 						"SELECT id FROM "+cats[type]+" WHERE name = ?"
 						);
@@ -232,7 +232,7 @@ public class MediathequeData implements PersistentMediatheque {
 			s.setString(3, (String) args[2]);
 			s.setString(4, (String) args[3]);
 			s.setInt(5, catid);
-			s.execute();
+			s.executeUpdate();
 		} catch (SQLException e) {
 			System.err.println("Failed to execute query : " + e.getMessage());
 		}
@@ -245,6 +245,7 @@ public class MediathequeData implements PersistentMediatheque {
 			s.setInt(1, (int) u.data()[0]);
 			s.setInt(2, (int) d.data()[0]);
 			s.setDate(3, new java.sql.Date(new java.util.Date().getTime()));
+			s.executeUpdate();
 		} catch (SQLException e) {
 			System.err.println("Failed to execute query : " + e.getMessage());
 		}
@@ -258,7 +259,7 @@ public class MediathequeData implements PersistentMediatheque {
 			s.setDate(1, new java.sql.Date(new java.util.Date().getTime()));
 			s.setInt(2, (int) d.data()[0]);
 			s.setInt(3, (int) u.data()[0]);
-			s.execute();
+			s.executeUpdate();
 		} catch (SQLException e) {
 			System.err.println("Failed to execute query : " + e.getMessage());
 		}
